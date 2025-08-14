@@ -2,7 +2,7 @@
 import webbrowser
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 import os
-import time
+
 
 PORT = 8000
 DIRECTORY = os.path.dirname(os.path.abspath(__file__))
