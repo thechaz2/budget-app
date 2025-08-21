@@ -135,345 +135,795 @@
             margin-left: 0;
             list-style: none;
         }
+        .loading {
+            opacity: 0.7;
+            pointer-events: none;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="sidebar">
             <div class="text-left">
-            <a href="index.html" class="btn btn-success add-btn" role="button">
-            Main Menu
-            </a>
+                <a href="index.html" class="btn btn-success add-btn" role="button">Main Menu</a>
+                <button class="btn btn-success add-btn" onclick="lastMonth()">Last Month</button>
+                <button class="btn btn-success add-btn" id="add-month-btn" onclick="addNewMonth()">Add New Month</button>
+                <button class="btn btn-success add-btn" id="next-month-btn" onclick="nextMonth()">Next Month</button>
             </div>
-            <h2>Bills</h2>
-            <ul id="bills-list" class="editable-list"></ul>
             <h2 class="mt-4">Money In</h2>
             <ul id="money-in-list" class="money-in-list"></ul>
+            <h2>Bills</h2>
+            <ul id="bills-list" class="editable-list"></ul>  
         </div>
         <div class="main">
-            <h1>Monthly Budget Table</h1>
+            <h1 id="month-title">Loading...</h1>
             <div id="budget-table"></div>
         </div>
     </div>
     <!-- Bootstrap JS (optional, for future use) -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // Load all months and active month
-        let allMonths = JSON.parse(localStorage.getItem('allMonths')) || {};
-        let activeMonth = localStorage.getItem('activeMonth') || '2025-09';
-        console.log('Active Month:', localStorage.getItem('activeMonth'));
-        if (!allMonths[activeMonth]) {
-            allMonths[activeMonth] = { bills: [], moneyIns: [] };
-        }
-        let bills = allMonths[activeMonth].bills || [];
-        let moneyIns = allMonths[activeMonth].moneyIns || [];
-        let quarterlyPaid = allMonths[activeMonth].quarterlyPaid || {};
-        function saveData() {
-            allMonths[activeMonth].bills = bills;
-            allMonths[activeMonth].moneyIns = moneyIns;
-            allMonths[activeMonth].quarterlyPaid = quarterlyPaid;
-            localStorage.setItem('allMonths', JSON.stringify(allMonths));
-        }
+    // Global variables
+    let activeMonth = localStorage.getItem('activeMonth') || '';
+    let bills = [];
+    let moneyIns = [];
+    let allMonths = [];
+    let quarterlyPaid = JSON.parse(localStorage.getItem('quarterlyPaid') || '{}');
+    let monthlyBalances = JSON.parse(localStorage.getItem('monthlyBalances')) || {};
 
-        function renderBillsList() {
-            const ul = document.getElementById('bills-list');
-            ul.innerHTML = '';
-            bills.forEach((bill, idx) => {
-                // Ensure quarterly property exists
-                if (typeof bill.quarterly === 'undefined') bill.quarterly = false;
-                if (typeof quarterlyPaid[bill.name] === 'undefined') quarterlyPaid[bill.name] = false;
-                const li = document.createElement('li');
-                li.innerHTML = `
-                    <label class="me-2" style="font-size:0.95em;">
-                        <input type="checkbox" ${bill.quarterly ? 'checked' : ''} onchange="editBill(${idx}, 'quarterly', this.checked)" />
-                        Q
-                    </label>
-                    <input type="text" class="form-control form-control-sm" value="${bill.name}" onchange="editBill(${idx}, 'name', this.value)" placeholder="Name" />
-                    <input type="number" class="form-control form-control-sm" value="${bill.amount}" min="0" onchange="editBill(${idx}, 'amount', this.value)" placeholder="Amount" />
-                    <input type="text" class="form-control form-control-sm" value="${bill.date}" maxlength="2" onchange="editBill(${idx}, 'date', this.value)" placeholder="dd" />
-                    <button class="remove-btn" title="Remove" onclick="removeBill(${idx})">&times;</button>
-                `;
-                ul.appendChild(li);
-            });
-            // Add empty row for new bill
-            const emptyLi = document.createElement('li');
-            emptyLi.innerHTML = `
-                <label class="me-2" style="font-size:0.95em;">
-                    <input type="checkbox" id="new-bill-quarterly" />
-                    Q
-                </label>
-                <input type="text" class="form-control form-control-sm" value="" placeholder="Name" id="new-bill-name" />
-                <input type="number" class="form-control form-control-sm" value="" min="0" placeholder="Amount" id="new-bill-amount" />
-                <input type="text" class="form-control form-control-sm" value="" maxlength="2" placeholder="dd" id="new-bill-date" />
-            `;
-            ul.appendChild(emptyLi);
-
-            // Add event listeners to empty row
-            ['new-bill-name', 'new-bill-amount', 'new-bill-date', 'new-bill-quarterly'].forEach(id => {
-                document.getElementById(id).addEventListener('change', tryAddNewBill);
-            });
-        }
-
-        function tryAddNewBill() {
-            const name = document.getElementById('new-bill-name').value.trim();
-            const amount = Number(document.getElementById('new-bill-amount').value);
-            const date = document.getElementById('new-bill-date').value.trim();
-            const quarterly = document.getElementById('new-bill-quarterly').checked;
-            if (name && amount > 0 && date) {
-                bills.push({ name, amount, date, quarterly });
-                saveData();
-                renderBillsList();
-                updateTable();
+    // API helper functions
+    async function apiCall(endpoint, options = {}) {
+        try {
+            const response = await fetch(endpoint, options);
+            if (!response.ok) {
+                throw new Error(`API error: ${response.status}`);
             }
+            return await response.json();
+        } catch (error) {
+            console.error('API call failed:', error);
+            alert('Error communicating with server. Please try again.');
+            throw error;
         }
+    }
 
-        function renderMoneyInList() {
-            const ul = document.getElementById('money-in-list');
-            ul.innerHTML = '';
-            moneyIns.forEach((income, idx) => {
-                const li = document.createElement('li');
-                li.innerHTML = `
-                    <input type="text" class="form-control form-control-sm" value="${income.name}" onchange="editMoneyIn(${idx}, 'name', this.value)" placeholder="Name" />
-                    <input type="number" class="form-control form-control-sm" value="${income.amount}" min="0" onchange="editMoneyIn(${idx}, 'amount', this.value)" placeholder="Amount" />
-                    <input type="text" class="form-control form-control-sm" value="${income.date}" maxlength="2" onchange="editMoneyIn(${idx}, 'date', this.value)" placeholder="dd" />
-                    <button class="remove-btn" title="Remove" onclick="removeMoneyIn(${idx})">&times;</button>
-                `;
-                ul.appendChild(li);
-            });
-            // Add empty row for new money in
-            const emptyLi = document.createElement('li');
-            emptyLi.innerHTML = `
-                <input type="text" class="form-control form-control-sm" value="" placeholder="Name" id="new-moneyin-name" />
-                <input type="number" class="form-control form-control-sm" value="" min="0" placeholder="Amount" id="new-moneyin-amount" />
-                <input type="text" class="form-control form-control-sm" value="" maxlength="2" placeholder="dd" id="new-moneyin-date" />
-            `;
-            ul.appendChild(emptyLi);
+    // Get month name from YYYY-MM format
+    function getMonthName(ym) {
+        const [year, month] = ym.split('-');
+        const date = new Date(year, month - 1);
+        return date.toLocaleString('default', { month: 'long', year: 'numeric' });
+    }
 
-            // Add event listeners to empty row
-            ['new-moneyin-name', 'new-moneyin-amount', 'new-moneyin-date'].forEach(id => {
-                document.getElementById(id).addEventListener('change', tryAddNewMoneyIn);
-            });
+    // Get current month in YYYY-MM format
+    function getCurrentMonth() {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        return `${year}-${month}`;
+    }
+
+    // Load all months from the server
+    async function loadAllMonths() {
+        try {
+            allMonths = await apiCall('/months');
+            updateMonthButtons();
+        } catch (error) {
+            console.error('Failed to load months:', error);
         }
+    }
 
-        function tryAddNewMoneyIn() {
-            const name = document.getElementById('new-moneyin-name').value.trim();
-            const amount = Number(document.getElementById('new-moneyin-amount').value);
-            const date = document.getElementById('new-moneyin-date').value.trim();
-            if (name && amount > 0 && date) {
-                moneyIns.push({ name, amount, date });
-                saveData();
-                renderMoneyInList();
-                updateTable();
+    
+    // Load bills for the active month
+    async function loadBills() {
+        try {
+            bills = await apiCall(`/bills?ym=${activeMonth}`);
+            console.log('Loaded bills with quarterly flags:', bills);
+        } catch (error) {
+            console.error('Failed to load bills:', error);
+            bills = [];
+        }
+    }
+
+    // Load money_ins for the active month
+    async function loadMoneyIns() {
+        try {
+            moneyIns = await apiCall(`/money_ins?ym=${activeMonth}`);
+            renderMoneyInList();
+        } catch (error) {
+            console.error('Failed to load money_ins:', error);
+            moneyIns = [];
+        }
+    }
+
+    // Add a new bill
+    async function addBill(name, amount, date, quarterly = false) {
+        try {
+            const newBill = await apiCall('/add_bill', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ym: activeMonth, name, amount, date })
+            });
+            
+            // Add quarterly flag to the bill object (not stored in DB)
+            if (quarterly) {
+                newBill.bill.quarterly = true;
             }
-        }
-
-        function removeBill(idx) {
-            bills.splice(idx, 1);
-            saveData();
+            
+            bills.push(newBill.bill);
             renderBillsList();
             updateTable();
+            return newBill.bill;
+        } catch (error) {
+            console.error('Failed to add bill:', error);
         }
+    }
 
-        function editBill(idx, field, value) {
-            if (field === 'quarterly') {
-                bills[idx][field] = value;
-            } else {
-                bills[idx][field] = field === 'amount' ? Number(value) : value;
-            }
-            saveData();
-            updateTable();
+    // Update a bill
+    async function updateBill(id, updates) {
+        try {
+            // For simplicity, we'll delete and recreate the bill
+            // In a real app, you'd have an update endpoint
+            await deleteBill(id);
+            const { name, amount, date, quarterly } = updates;
+            await addBill(name, amount, date, quarterly);
+        } catch (error) {
+            console.error('Failed to update bill:', error);
         }
+    }
 
-        function removeMoneyIn(idx) {
-            moneyIns.splice(idx, 1);
-            saveData();
+   // Delete a bill
+async function deleteBill(id) {
+    try {
+        // Call the DELETE endpoint
+        await apiCall(`/delete_bill/${id}`, { method: 'DELETE' });
+        
+        // Remove from local array
+        bills = bills.filter(bill => bill.id !== id);
+        renderBillsList();
+        updateTable();
+    } catch (error) {
+        console.error('Failed to delete bill:', error);
+        alert('Failed to delete bill. Please try again.');
+    }
+}
+
+    // Add a new money_in entry
+    async function addMoneyIn(source, amount, date) {
+        try {
+            const newMoneyIn = await apiCall('/add_money_in', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ym: activeMonth, source, amount, date })
+            });
+            
+            moneyIns.push(newMoneyIn.money_in);
             renderMoneyInList();
             updateTable();
+            return newMoneyIn.money_in;
+        } catch (error) {
+            console.error('Failed to add money_in:', error);
         }
+    }
 
-        function editMoneyIn(idx, field, value) {
-            moneyIns[idx][field] = field === 'amount' ? Number(value) : value;
-            saveData();
-            updateTable();
+    // Update a money_in entry
+    async function updateMoneyIn(id, updates) {
+        try {
+            // For simplicity, we'll delete and recreate the entry
+            // In a real app, you'd have an update endpoint
+            await deleteMoneyIn(id);
+            const { source, amount, date } = updates;
+            await addMoneyIn(source, amount, date);
+        } catch (error) {
+            console.error('Failed to update money_in:', error);
         }
+    }
 
-        function payQuarterly(billName) {
-            quarterlyPaid[billName] = true;
-            saveData();
-            updateTable();
+    /// Delete a money_in entry
+async function deleteMoneyIn(id) {
+    try {
+        // Call the DELETE endpoint
+        await apiCall(`/delete_money_in/${id}`, { method: 'DELETE' });
+        
+        // Remove from local array
+        moneyIns = moneyIns.filter(mi => mi.id !== id);
+        renderMoneyInList();
+        updateTable();
+    } catch (error) {
+        console.error('Failed to delete money_in:', error);
+        alert('Failed to delete income entry. Please try again.');
+    }
+}
+
+    async function addNewMonth() {
+    try {
+        // Find the next month after the last one
+        let nextYm;
+        let previousYm = null;
+        
+        if (allMonths.length === 0) {
+            nextYm = getCurrentMonth();
+        } else {
+            const last = allMonths[allMonths.length - 1].ym;
+            previousYm = last;
+            const [year, month] = last.split('-').map(Number);
+            let nextYear = year, nextMonth = month + 1;
+            if (nextMonth > 12) { nextMonth = 1; nextYear++; }
+            nextYm = `${nextYear}-${String(nextMonth).padStart(2, '0')}`;
         }
-
-        function unpayQuarterly(billName) {
-            quarterlyPaid[billName] = false;
-            saveData();
-            updateTable();
+        
+        const newMonth = await apiCall('/add_month', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ym: nextYm })
+        });
+        
+        allMonths.push(newMonth.month);
+        activeMonth = nextYm;
+        localStorage.setItem('activeMonth', activeMonth);
+        updateMonthTitle();
+        
+        // Set opening balance from previous month's closing balance
+        if (previousYm && monthlyBalances[previousYm]) {
+            if (!monthlyBalances[activeMonth]) {
+                monthlyBalances[activeMonth] = {};
+            }
+            monthlyBalances[activeMonth].openingBalance = monthlyBalances[previousYm].closingBalance || 0;
+            localStorage.setItem('monthlyBalances', JSON.stringify(monthlyBalances));
         }
-
-        function updateTable() {
-            // Get unique dates from bills and moneyIns
-            const billDates = bills.map(b => b.date).filter(d => d);
-            const moneyInDates = moneyIns.map(m => m.date).filter(d => d);
-            const dates = [...new Set([...billDates, ...moneyInDates])].sort((a, b) => Number(a) - Number(b));
-
-            // Calculate running saved amounts for each quarterly bill (by name+date)
-            let quarterlySavedMap = {};
-            bills.forEach(bill => {
-                if (bill.quarterly) {
-                    const key = bill.name + '_' + bill.date;
-                    quarterlySavedMap[key] = 0;
-                }
-            });
-            dates.forEach(date => {
-                bills.forEach(bill => {
-                    if (bill.quarterly && bill.date === date) {
-                        const key = bill.name + '_' + bill.date;
-                        if (!quarterlyPaid[key]) {
-                            quarterlySavedMap[key] += bill.amount || 0;
-                        }
-                    }
+        
+        // Copy bills from previous month if it exists
+        if (previousYm) {
+            const previousBills = await apiCall(`/bills?ym=${previousYm}`);
+            
+            // Add each bill to the new month
+            for (const bill of previousBills) {
+                await apiCall('/add_bill', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        ym: nextYm,
+                        name: bill.name,
+                        amount: bill.amount,
+                        date: bill.date || "",
+                        quarterly: bill.quarterly || false
+                    })
                 });
-            });
-
-            let html = '<table class="table table-bordered table-striped align-middle"><thead><tr><th>Bill</th>';
-            dates.forEach(date => {
-                html += `<th>${date}</th>`;
-            });
-            html += '</tr></thead><tbody>';
-
-            bills.forEach(bill => {
-                let quarterlyInfo = '';
-                if (bill.quarterly) {
-                    const key = bill.name + '_' + bill.date;
-                    quarterlyInfo = ` <span class="badge bg-info text-dark">Q</span> <span style="color:#388e3c;">(${Number(quarterlySavedMap[key]).toFixed(2)})</span>`;
-                    // Add pay checkbox if there is a saved amount
-                    if (quarterlySavedMap[key] > 0 && !quarterlyPaid[key]) {
-                        quarterlyInfo += ` <input type="checkbox" title="Pay Quarterly Bill" onclick="payQuarterly('${bill.name.replace(/'/g,"\\'")}', '${bill.date}')" style="vertical-align:middle;" />`;
-                    }
-                    // If paid, show a paid badge that can be clicked to reverse
-                    if (quarterlyPaid[key]) {
-                        quarterlyInfo += ` <span class="badge bg-success text-light" style="cursor:pointer;" title="Click to undo" onclick="unpayQuarterly('${bill.name.replace(/'/g,"\\'")}', '${bill.date}')">Paid</span>`;
-                    }
-                }
-                html += `<tr><td>${bill.name || ''}${quarterlyInfo}</td>`;
-                dates.forEach(date => {
-                    html += `<td>${bill.date === date && bill.amount ? '£' + Number(bill.amount).toFixed(2) : ''}</td>`;
-                });
-                html += '</tr>';
-            });
-
-            // Money In row
-            html += `<tr class="summary-row"><td>Money In</td>`;
-            const moneyInByDate = dates.map(date =>
-                moneyIns.filter(income => income.date === date).reduce((sum, income) => sum + (income.amount || 0), 0)
-            );
-            moneyInByDate.forEach(totalIn => {
-                html += `<td>£${Number(totalIn).toFixed(2)}</td>`;
-            });
-            html += '</tr>';
-
-            // Money Out row (exclude quarterly bills from leaving the account, unless paid)
-            let moneyOutByDate = dates.map((date, idx) => {
-                // Regular bills
-                let regularOut = bills.filter(bill => bill.date === date && !bill.quarterly)
-                    .reduce((sum, bill) => sum + (bill.amount || 0), 0);
-
-                // Paid quarterly bills: add total saved for this bill to money out on the payout date
-                let quarterlyOut = 0;
-                bills.forEach(bill => {
-                    if (bill.quarterly) {
-                        const key = bill.name + '_' + bill.date;
-                        if (quarterlyPaid[key] && bill.date === date) {
-                            // Calculate total saved for this bill up to and including this date
-                            let saved = 0;
-                            dates.forEach((d, i) => {
-                                if (i <= idx && bill.name + '_' + bill.date === key && bill.date === d) {
-                                    saved += bill.amount || 0;
-                                }
-                            });
-                            quarterlyOut += saved;
-                            // Debug output for quarterly payout
-                            console.log(`Quarterly payout for "${bill.name}" on date ${date}: saved=${saved}, key=${key}, quarterlyOut=${quarterlyOut}`);
-                        }
-                    }
-                });
-
-                // Debug output for each date
-                console.log(`Money Out for date ${date}: regularOut=${regularOut}, quarterlyOut=${quarterlyOut}, total=${regularOut + quarterlyOut}`);
-                return regularOut + quarterlyOut;
-            });
-
-            html += `<tr class="summary-row"><td>Money Out</td>`;
-            moneyOutByDate.forEach(amount => {
-                html += `<td>£${Number(amount).toFixed(2)}</td>`;
-            });
-            html += '</tr>';
-
-            // Net row
-            let netByDate = dates.map((date, idx) => moneyInByDate[idx] - moneyOutByDate[idx]);
-            html += `<tr class="summary-row"><td>Net</td>`;
-            netByDate.forEach(amount => {
-                html += `<td>£${Number(amount).toFixed(2)}</td>`;
-            });
-            html += '</tr>';
-
-            // Running Balance row
-            let runningBalance = [];
-            let balance = 0;
-            netByDate.forEach((net, idx) => {
-                balance += net;
-                runningBalance[idx] = balance;
-            });
-            html += `<tr class="summary-row"><td>Balance</td>`;
-            runningBalance.forEach(amount => {
-                html += `<td>£${Number(amount).toFixed(2)}</td>`;
-            });
-            html += '</tr>';
-
-            // Running total of saved quarterly bills
-            let savedQuarterly = [];
-            let savedTotal = 0;
-            dates.forEach((date, idx) => {
-                // Add any quarterly bill for this date to the saved total, unless paid
-                const savedForDate = bills.filter(bill => {
-                    const key = bill.name + '_' + bill.date;
-                    return bill.date === date && bill.quarterly && !quarterlyPaid[key];
-                }).reduce((sum, bill) => sum + (bill.amount || 0), 0);
-                savedTotal += savedForDate;
-                // If paid, reset to zero for that bill
-                bills.forEach(bill => {
-                    const key = bill.name + '_' + bill.date;
-                    if (quarterlyPaid[key] && bill.date === date) {
-                        savedTotal -= quarterlySavedMap[key];
-                    }
-                });
-                savedQuarterly[idx] = savedTotal;
-            });
-            html += `<tr class="summary-row"><td>Saved for Quarterly Bills</td>`;
-            savedQuarterly.forEach(amount => {
-                html += `<td>£${Number(amount).toFixed(2)}</td>`;
-            });
-            html += '</tr>';
-
-            html += '</tbody></table>';
-
-            document.getElementById('budget-table').innerHTML = html;
+            }
         }
-
-        // Update pay/unpay functions to use name+date key
-        function payQuarterly(name, date) {
-            quarterlyPaid[name + '_' + date] = true;
-            saveData();
-            updateTable();
-        }
-        function unpayQuarterly(name, date) {
-            quarterlyPaid[name + '_' + date] = false;
-            saveData();
-            updateTable();
-        }
-        // Initial render
+        
+        // Load the data for the new month from the server
+        await loadBills();
+        await loadMoneyIns();
+        
+        // Render the lists and table
         renderBillsList();
         renderMoneyInList();
         updateTable();
+        updateMonthButtons();
+    } catch (error) {
+        console.error('Failed to add month:', error);
+        alert('Failed to create new month. Please try again.');
+    }
+}
+// Navigate to next month
+async function nextMonth() {
+    try {
+        const [year, month] = activeMonth.split('-').map(Number);
+        let nextYear = year, nextMonth = month + 1;
+        
+        if (nextMonth > 12) {
+            nextMonth = 1;
+            nextYear++;
+        }
+        
+        const nextYm = `${nextYear}-${String(nextMonth).padStart(2, '0')}`;
+        const monthExists = allMonths.some(m => m.ym === nextYm);
+        
+        if (monthExists) {
+            // Show loading state
+            document.body.classList.add('loading');
+            
+            activeMonth = nextYm;
+            localStorage.setItem('activeMonth', activeMonth);
+            updateMonthTitle();
+            
+            // Load data for the next month
+            await loadBills();
+            await loadMoneyIns();
+            
+            // Update UI
+            renderBillsList();
+            renderMoneyInList();
+            updateTable();
+            updateMonthButtons();
+            
+            // Hide loading state
+            document.body.classList.remove('loading');
+        } else {
+            console.log('Next month does not exist:', nextYm);
+        }
+    } catch (error) {
+        console.error('Failed to navigate to next month:', error);
+        document.body.classList.remove('loading');
+    }
+}
+    // Navigate to previous month
+    async function lastMonth() {
+        const [year, month] = activeMonth.split('-').map(Number);
+        let prevYear = year, prevMonth = month - 1;
+        
+        if (prevMonth < 1) {
+            prevMonth = 12;
+            prevYear--;
+        }
+        
+        const prevYm = `${prevYear}-${String(prevMonth).padStart(2, '0')}`;
+        const monthExists = allMonths.some(m => m.ym === prevYm);
+        
+        if (monthExists) {
+            activeMonth = prevYm;
+            localStorage.setItem('activeMonth', activeMonth);
+            updateMonthTitle();
+            await loadBills();
+            await loadMoneyIns();
+            updateTable();
+            updateMonthButtons()
+        }
+    }
+
+    // Update month navigation buttons
+function updateMonthButtons() {
+    if (!activeMonth || allMonths.length === 0) return;
+    
+    const [year, month] = activeMonth.split('-').map(Number);
+    
+    // Check if next month exists
+    let nextYear = year, nextMonth = month + 1;
+    if (nextMonth > 12) {
+        nextMonth = 1;
+        nextYear++;
+    }
+    const nextYm = `${nextYear}-${String(nextMonth).padStart(2, '0')}`;
+    const nextExists = allMonths.some(m => m.ym === nextYm);
+    
+    // Check if previous month exists
+    let prevYear = year, prevMonth = month - 1;
+    if (prevMonth < 1) {
+        prevMonth = 12;
+        prevYear--;
+    }
+    const prevYm = `${prevYear}-${String(prevMonth).padStart(2, '0')}`;
+    const prevExists = allMonths.some(m => m.ym === prevYm);
+    
+    // Get button elements
+    const addBtn = document.getElementById('add-month-btn');
+    const nextBtn = document.getElementById('next-month-btn');
+    const lastBtn = document.querySelector('button[onclick="lastMonth()"]');
+    
+    // Update button visibility
+    addBtn.style.display = nextExists ? 'none' : 'inline-block';
+    nextBtn.style.display = nextExists ? 'inline-block' : 'none';
+    
+    // Show/hide last month button
+    if (lastBtn) {
+        lastBtn.style.display = prevExists ? 'inline-block' : 'none';
+    }
+    
+    // Special case: if we're on the current month, don't show next month button
+    // even if it exists in the database (since we want to show add button instead)
+    //const currentMonth = getCurrentMonth();
+    //if (activeMonth === currentMonth) {
+     //   addBtn.style.display = 'inline-block';
+     //   nextBtn.style.display = 'none';
+    //}
+}
+
+    // Update month title
+    function updateMonthTitle() {
+        document.getElementById('month-title').textContent = getMonthName(activeMonth);
+    }
+
+    // Render bills list
+    
+function renderBillsList() {
+    const ul = document.getElementById('bills-list');
+    ul.innerHTML = '';
+    
+    bills.forEach((bill, idx) => {
+        // Ensure quarterly flag exists
+        if (typeof bill.quarterly === 'undefined') {
+            bill.quarterly = false;
+        }
+        
+        const li = document.createElement('li');
+        li.innerHTML = `
+            <label class="me-2" style="font-size:0.95em;">
+                <input type="checkbox" ${bill.quarterly ? 'checked' : ''} 
+                       onchange="toggleBillQuarterly(${idx}, this.checked)" />Q
+            </label>
+            <input type="text" class="form-control form-control-sm" value="${bill.name || ''}" 
+                   onchange="editBill(${idx}, 'name', this.value)" placeholder="Name" />
+            <input type="number" class="form-control form-control-sm" value="${bill.amount || ''}" min="0" 
+                   onchange="editBill(${idx}, 'amount', parseFloat(this.value))" placeholder="Amount" />
+            <input type="text" class="form-control form-control-sm" value="${bill.date || ''}" maxlength="2" 
+                   onchange="editBill(${idx}, 'date', this.value)" placeholder="dd" />
+            <button class="remove-btn" title="Remove" onclick="removeBill(${idx})">&times;</button>
+        `;
+        ul.appendChild(li);
+    });
+
+   
+
+        // Empty row for new bill
+        const emptyLi = document.createElement('li');
+        emptyLi.innerHTML = `
+            <label class="me-2" style="font-size:0.95em;">
+                <input type="checkbox" id="new-bill-quarterly" /> Q
+            </label>
+            <input type="text" class="form-control form-control-sm" id="new-bill-name" placeholder="Name" />
+            <input type="number" class="form-control form-control-sm" id="new-bill-amount" min="0" placeholder="Amount" />
+            <input type="text" class="form-control form-control-sm" id="new-bill-date" maxlength="2" placeholder="dd" />
+        `;
+        ul.appendChild(emptyLi);
+
+        // Add event listeners for the new bill inputs
+        ['new-bill-name', 'new-bill-amount', 'new-bill-date'].forEach(id => {
+            document.getElementById(id).addEventListener('change', tryAddNewBill);
+        });
+        document.getElementById('new-bill-quarterly').addEventListener('change', tryAddNewBill);
+    }
+
+    // Render money_in list
+    function renderMoneyInList() {
+        const ul = document.getElementById('money-in-list');
+        ul.innerHTML = '';
+        
+        moneyIns.forEach((income, idx) => {
+            const li = document.createElement('li');
+            li.innerHTML = `
+                <input type="text" class="form-control form-control-sm" value="${income.source}" 
+                       onchange="editMoneyIn(${idx}, 'source', this.value)" placeholder="Source" />
+                <input type="number" class="form-control form-control-sm" value="${income.amount}" min="0" 
+                       onchange="editMoneyIn(${idx}, 'amount', parseFloat(this.value))" placeholder="Amount" />
+                <input type="text" class="form-control form-control-sm" value="${income.date || ''}" maxlength="2" 
+                       onchange="editMoneyIn(${idx}, 'date', this.value)" placeholder="dd" />
+                <button class="remove-btn" title="Remove" onclick="removeMoneyIn(${idx})">&times;</button>
+            `;
+            ul.appendChild(li);
+        });
+
+        // Empty row for new income
+        const emptyLi = document.createElement('li');
+        emptyLi.innerHTML = `
+            <input type="text" class="form-control form-control-sm" id="new-moneyin-source" placeholder="Source" />
+            <input type="number" class="form-control form-control-sm" id="new-moneyin-amount" min="0" placeholder="Amount" />
+            <input type="text" class="form-control form-control-sm" id="new-moneyin-date" maxlength="2" placeholder="dd" />
+        `;
+        ul.appendChild(emptyLi);
+
+        // Add event listeners for the new money_in inputs
+        ['new-moneyin-source', 'new-moneyin-amount', 'new-moneyin-date'].forEach(id => {
+            document.getElementById(id).addEventListener('change', tryAddNewMoneyIn);
+        });
+    }
+
+    // Try to add a new bill
+    async function tryAddNewBill() {
+        const name = document.getElementById('new-bill-name').value.trim();
+        const amount = parseFloat(document.getElementById('new-bill-amount').value);
+        let date = document.getElementById('new-bill-date').value.trim();
+        const quarterly = document.getElementById('new-bill-quarterly').checked;
+        
+        if (name && !isNaN(amount) && amount > 0 && date) {
+            date = normalizeDateStr(date);
+            await addBill(name, amount, date, quarterly);
+            
+            // Clear the input fields
+            document.getElementById('new-bill-name').value = '';
+            document.getElementById('new-bill-amount').value = '';
+            document.getElementById('new-bill-date').value = '';
+            document.getElementById('new-bill-quarterly').checked = false;
+        }
+    }
+
+    // Try to add a new money_in entry
+    async function tryAddNewMoneyIn() {
+        const source = document.getElementById('new-moneyin-source').value.trim();
+        const amount = parseFloat(document.getElementById('new-moneyin-amount').value);
+        let date = document.getElementById('new-moneyin-date').value.trim();
+        
+        if (source && !isNaN(amount) && amount > 0 && date) {
+            date = normalizeDateStr(date);
+            await addMoneyIn(source, amount, date);
+            
+            // Clear the input fields
+            document.getElementById('new-moneyin-source').value = '';
+            document.getElementById('new-moneyin-amount').value = '';
+            document.getElementById('new-moneyin-date').value = '';
+        }
+    }
+
+    // Remove a bill
+    async function removeBill(idx) {
+        const bill = bills[idx];
+        if (bill && bill.id) {
+            await deleteBill(bill.id);
+        }
+    }
+
+    // Remove a money_in entry
+    async function removeMoneyIn(idx) {
+        const moneyIn = moneyIns[idx];
+        if (moneyIn && moneyIn.id) {
+            await deleteMoneyIn(moneyIn.id);
+        }
+    }
+
+    // Edit a bill
+    async function editBill(idx, field, value) {
+        const bill = bills[idx];
+        if (bill && bill.id) {
+            const updates = {...bill, [field]: value};
+            await updateBill(bill.id, updates);
+        }
+    }
+
+    // Toggle bill quarterly status
+    async function toggleBillQuarterly(idx, isQuarterly) {
+    const bill = bills[idx];
+    if (bill && bill.id) {
+        try {
+            // Update the bill in the database
+            const updatedBill = await apiCall('/update_bill', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    id: bill.id,
+                    name: bill.name,
+                    amount: bill.amount,
+                    date: bill.date || "",
+                    quarterly: isQuarterly
+                })
+            });
+            
+            // Update local array
+            bills[idx] = updatedBill.bill;
+            updateTable();
+        } catch (error) {
+            console.error('Failed to update bill quarterly status:', error);
+            // Revert the checkbox if update failed
+            renderBillsList();
+        }
+    }
+}
+
+    // Edit a money_in entry
+    async function editMoneyIn(idx, field, value) {
+        const moneyIn = moneyIns[idx];
+        if (moneyIn && moneyIn.id) {
+            const updates = {...moneyIn, [field]: value};
+            await updateMoneyIn(moneyIn.id, updates);
+        }
+    }
+
+    // Normalize date string (add leading zero if needed)
+    function normalizeDateStr(d) {
+        return d.padStart(2, '0');
+    }
+
+    // Pay a quarterly bill
+    function payQuarterly(name, date) {
+        const key = `${name}_${date}`;
+        quarterlyPaid[key] = true;
+        localStorage.setItem('quarterlyPaid', JSON.stringify(quarterlyPaid));
+        updateTable();
+    }
+
+    // Unpay a quarterly bill
+    function unpayQuarterly(name, date) {
+        const key = `${name}_${date}`;
+        quarterlyPaid[key] = false;
+        localStorage.setItem('quarterlyPaid', JSON.stringify(quarterlyPaid));
+        updateTable();
+    }
+
+    // Update the budget table
+    function updateTable() {
+        // Extract dates from bills and money_ins
+        const billDates = bills.map(b => b.date).filter(d => d);
+        const moneyInDates = moneyIns.map(m => m.date).filter(d => d);
+        const dates = [...new Set([...billDates, ...moneyInDates])].sort((a, b) => Number(a) - Number(b));
+
+        // Start building the table HTML
+        let html = '<table class="table table-bordered table-striped align-middle"><thead><tr><th>Bill</th>';
+        dates.forEach(date => html += `<th>${date}</th>`);
+        html += '</tr></thead><tbody>';
+
+        // Add bills to the table
+        bills.forEach(bill => {
+            const key = `${bill.name}_${bill.date}`;
+            let quarterlyInfo = '';
+            
+            if (bill.quarterly) {
+                if (!quarterlyPaid[key]) {
+                    quarterlyInfo = ` <span style="color:#388e3c;">(saving)</span>
+                                     <button class="btn btn-sm btn-outline-primary ms-1" 
+                                             onclick="payQuarterly('${bill.name.replace(/'/g, "\\'")}', '${bill.date}')">
+                                         Pay Now
+                                     </button>`;
+                } else {
+                    quarterlyInfo = ` <span class="badge bg-success text-light" style="cursor:pointer;" 
+                                         title="Click to undo" 
+                                         onclick="unpayQuarterly('${bill.name.replace(/'/g, "\\'")}', '${bill.date}')">
+                                         Paid
+                                     </span>`;
+                }
+            }
+
+            html += `<tr><td>${bill.name}${quarterlyInfo}</td>`;
+            dates.forEach(date => {
+                html += `<td>${bill.date === date && bill.amount ? '£' + bill.amount.toFixed(2) : ''}</td>`;
+            });
+            html += '</tr>';
+        });
+
+        // Calculate money in by date
+        const moneyInByDate = dates.map(date =>
+            moneyIns.filter(i => i.date === date).reduce((sum, i) => sum + (i.amount || 0), 0)
+        );
+        
+        html += `<tr class="summary-row"><td>Money In</td>`;
+        moneyInByDate.forEach(val => html += `<td>£${val.toFixed(2)}</td>`);
+        html += '</tr>';
+
+        // Calculate money out by date (only paid bills & regular bills)
+        const moneyOutByDate = dates.map(date =>
+            bills.filter(bill => {
+                if (!bill.quarterly) return bill.date === date;
+                const key = `${bill.name}_${bill.date}`;
+                return bill.date === date && quarterlyPaid[key];
+            }).reduce((sum, bill) => sum + (bill.amount || 0), 0)
+        );
+        
+        html += `<tr class="summary-row"><td>Money Out</td>`;
+        moneyOutByDate.forEach(val => html += `<td>£${val.toFixed(2)}</td>`);
+        html += '</tr>';
+
+        // Calculate net by date
+        const netByDate = dates.map((_, idx) => moneyInByDate[idx] - moneyOutByDate[idx]);
+        
+        html += `<tr class="summary-row"><td>Net</td>`;
+        netByDate.forEach(val => html += `<td>£${val.toFixed(2)}</td>`);
+        html += '</tr>';
+
+
+        // In your updateTable function, replace the balance calculation section:
+        let balance = monthlyBalances[activeMonth]?.openingBalance || 0;
+        const balanceByDate = netByDate.map(net => (balance += net));
+
+        // Save closing balance (last balanceByDate value, or opening balance if no dates)
+        const closing = balanceByDate.length ? balanceByDate[balanceByDate.length - 1] : (monthlyBalances[activeMonth]?.openingBalance || 0);
+
+        // Update the balances object
+        if (!monthlyBalances[activeMonth]) {
+            monthlyBalances[activeMonth] = {};
+        }
+        monthlyBalances[activeMonth].closingBalance = closing;
+
+        // Set next month's opening balance to this month's closing balance
+        const [year, month] = activeMonth.split('-').map(Number);
+        let nextYear = year, nextMonth = month + 1;
+        if (nextMonth > 12) {
+            nextMonth = 1;
+            nextYear++;
+        }
+        const nextYm = `${nextYear}-${String(nextMonth).padStart(2, '0')}`;
+
+        if (!monthlyBalances[nextYm]) {
+            monthlyBalances[nextYm] = {};
+        }
+        monthlyBalances[nextYm].openingBalance = closing;
+
+        // Save to localStorage
+        localStorage.setItem('monthlyBalances', JSON.stringify(monthlyBalances));
+
+        html += `<tr class="summary-row"><td>Balance</td>`;
+        balanceByDate.forEach(val => html += `<td>£${val.toFixed(2)}</td>`);
+        html += '</tr>';
+
+        // Calculate saved for quarterly bills
+        let savedTotal = 0;
+        const savedByDate = dates.map(date => {
+            const savedToday = bills.filter(bill => {
+                const key = `${bill.name}_${bill.date}`;
+                return bill.date === date && bill.quarterly && !quarterlyPaid[key];
+            }).reduce((sum, bill) => sum + (bill.amount || 0), 0);
+            
+            savedTotal += savedToday;
+            return savedTotal;
+        });
+        
+        html += `<tr class="summary-row"><td>Saved for Quarterly Bills</td>`;
+        savedByDate.forEach(val => html += `<td>£${val.toFixed(2)}</td>`);
+        html += '</tr>';
+
+        // Calculate available balance
+        html += `<tr class="summary-row"><td>Available Balance</td>`;
+        balanceByDate.forEach((bal, idx) => {
+            html += `<td>£${(bal - savedByDate[idx]).toFixed(2)}</td>`;
+        });
+        html += '</tr>';
+
+        html += '</tbody></table>';
+        document.getElementById('budget-table').innerHTML = html;
+    }
+
+    // Initialize the page
+async function init() {
+    try {
+        // Get active month from localStorage or use current month
+        activeMonth = localStorage.getItem('activeMonth') || getCurrentMonth();
+        localStorage.setItem('activeMonth', activeMonth);
+        
+        // Update month title
+        updateMonthTitle();
+        
+        // Show loading state
+        document.body.classList.add('loading');
+        
+        // Load all months first
+        await loadAllMonths();
+        
+        // Load bills and money_ins for the active month
+        await loadBills();
+        await loadMoneyIns();
+        
+        // Initialize balances if needed
+        await initBalances();
+        
+        // Render the UI
+        renderBillsList();
+        renderMoneyInList();
+        updateTable();
+        updateMonthButtons();
+        
+        // Hide loading state
+        document.body.classList.remove('loading');
+        
+    } catch (error) {
+        console.error('Initialization failed:', error);
+        document.body.classList.remove('loading');
+        alert('Failed to load data. Please refresh the page.');
+    }
+}
+// Initialize balances for the current month
+async function initBalances() {
+    if (!monthlyBalances[activeMonth]) {
+        monthlyBalances[activeMonth] = {};
+        
+        // Try to get closing balance from previous month
+        const [year, month] = activeMonth.split('-').map(Number);
+        let prevYear = year, prevMonth = month - 1;
+        if (prevMonth < 1) {
+            prevMonth = 12;
+            prevYear--;
+        }
+        const prevYm = `${prevYear}-${String(prevMonth).padStart(2, '0')}`;
+        
+        if (monthlyBalances[prevYm] && monthlyBalances[prevYm].closingBalance !== undefined) {
+            monthlyBalances[activeMonth].openingBalance = monthlyBalances[prevYm].closingBalance;
+        } else {
+            monthlyBalances[activeMonth].openingBalance = 0;
+        }
+        
+        localStorage.setItem('monthlyBalances', JSON.stringify(monthlyBalances));
+    }
+}
+    
+
+    // Start the application
+    init();
+    // Initialize the page when it loads
+    document.addEventListener('DOMContentLoaded', init);
     </script>
 </body>
 </html>

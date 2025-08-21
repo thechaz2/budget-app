@@ -20,7 +20,7 @@
             color: #1976d2;
             cursor: pointer;
             transition: box-shadow 0.2s;
-            position: relative; /* Added for delete button positioning */
+            position: relative;
         }
         .month-box:hover { box-shadow: 0 4px 16px rgba(44,62,80,0.15); background: #e0f7fa; }
         .add-btn {
@@ -33,16 +33,14 @@
             position: absolute;
             right: 10px;
             top: 10px;
-            color: red;
+            color: #1976d2;
             background: transparent;
             border: none;
             font-size: 1.2em;
             cursor: pointer;
             z-index: 10;
         }
-        .delete-month-btn:hover {
-            color: darkred;
-        }
+        .delete-month-btn:hover { color: darkred; }
     </style>
 </head>
 <body>
@@ -52,69 +50,87 @@
         <button class="btn btn-success add-btn" onclick="addNewMonth()">Add New Month</button>
     </div>
     <script>
-        // Helper to get month name
         function getMonthName(ym) {
             const [year, month] = ym.split('-');
             const date = new Date(year, month - 1);
             return date.toLocaleString('default', { month: 'long', year: 'numeric' });
         }
 
-        // Load months from localStorage
-        let allMonths = JSON.parse(localStorage.getItem('allMonths')) || {};
-        if (Object.keys(allMonths).length === 0) {
-            // If no months, create August 2025 as default
-            allMonths['2025-08'] = { bills: [], moneyIns: [] };
-            localStorage.setItem('allMonths', JSON.stringify(allMonths));
+        function getCurrentMonth() {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            return `${year}-${month}`;
         }
 
-        function renderMonths() {
+        async function fetchMonths() {
+            const res = await fetch("/months");
+            if (!res.ok) {
+                console.error("Failed to fetch months:", res.status);
+                return [];
+            }
+            return await res.json(); // [{id:1, ym:"2025-08"}]
+        }
+
+        async function renderMonths() {
             const grid = document.getElementById('monthGrid');
             grid.innerHTML = '';
-            Object.keys(allMonths).sort().forEach(ym => {
+            const months = await fetchMonths();
+
+            months.sort((a, b) => a.ym.localeCompare(b.ym)).forEach(m => {
+                const ym = m.ym;
                 const box = document.createElement('div');
                 box.className = 'month-box';
                 box.innerText = getMonthName(ym);
-                
-                // Add delete button
+
                 const deleteBtn = document.createElement('button');
                 deleteBtn.className = 'delete-month-btn';
                 deleteBtn.innerHTML = '×';
-                deleteBtn.onclick = (e) => {
-                    e.stopPropagation(); // Prevent triggering the box click
+                deleteBtn.onclick = async (e) => {
+                    e.stopPropagation();
                     if (confirm(`Delete ${getMonthName(ym)}?`)) {
-                        delete allMonths[ym];
-                        localStorage.setItem('allMonths', JSON.stringify(allMonths));
+                        await fetch("/delete_month", {
+                            method: "POST",
+                            headers: {"Content-Type": "application/json"},
+                            body: JSON.stringify({ ym })
+                        });
                         renderMonths();
                     }
                 };
                 box.appendChild(deleteBtn);
-                
+
                 box.onclick = () => {
-                    console.log('Setting activeMonth:', ym);
-                    localStorage.setItem('activeMonth', ym);
-                    console.log('Immediate verification:', localStorage.getItem('activeMonth'));
+                    localStorage.setItem('activeMonth', ym); // temporary nav state only
                     window.location.href = 'bud.html';
                 };
+
                 grid.appendChild(box);
             });
         }
 
-        function addNewMonth() {
-            // Find latest month
-            const months = Object.keys(allMonths).sort();
-            const last = months[months.length - 1];
-            const [year, month] = last.split('-').map(Number);
-            let nextYear = year, nextMonth = month + 1;
-            if (nextMonth > 12) { nextMonth = 1; nextYear++; }
-            const nextYm = `${nextYear}-${String(nextMonth).padStart(2, '0')}`;
-            // Copy bills, ignore moneyIns
-            const prevBills = allMonths[last].bills ? JSON.parse(JSON.stringify(allMonths[last].bills)) : [];
-            allMonths[nextYm] = { bills: prevBills, moneyIns: [] };
-            localStorage.setItem('allMonths', JSON.stringify(allMonths));
+        async function addNewMonth() {
+            const months = await fetchMonths();
+            let nextYm;
+
+            if (months.length === 0) {
+                nextYm = getCurrentMonth();
+            } else {
+                const last = months[months.length - 1].ym;
+                const [year, month] = last.split('-').map(Number);
+                let nextYear = year, nextMonth = month + 1;
+                if (nextMonth > 12) { nextMonth = 1; nextYear++; }
+                nextYm = `${nextYear}-${String(nextMonth).padStart(2, '0')}`;
+            }
+
+            await fetch("/add_month", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({ ym: nextYm })
+            });
+
             renderMonths();
         }
 
-        // Initialize the page
         renderMonths();
     </script>
 </body>
