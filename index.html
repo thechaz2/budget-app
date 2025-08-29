@@ -5,10 +5,11 @@
     <title>Budget Months</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        body { background: #e3f2fd; font-family: 'Segoe UI', Arial, sans-serif; }
+        body { background: #424449; font-family: 'Segoe UI', Arial, sans-serif; }
+        .header { color: #1976d2; text-align: center; margin: 20px 0; }
         .month-grid { display: flex; flex-wrap: wrap; gap: 24px; padding: 40px; }
         .month-box {
-            background: #fff;
+            background: #212327;
             border-radius: 16px;
             box-shadow: 0 2px 8px rgba(44,62,80,0.07);
             width: 220px;
@@ -23,12 +24,7 @@
             position: relative;
         }
         .month-box:hover { box-shadow: 0 4px 16px rgba(44,62,80,0.15); background: #e0f7fa; }
-        .add-btn {
-            margin: 40px;
-            padding: 16px 32px;
-            font-size: 1.2em;
-            border-radius: 12px;
-        }
+        
         .delete-month-btn {
             position: absolute;
             right: 10px;
@@ -41,13 +37,14 @@
             z-index: 10;
         }
         .delete-month-btn:hover { color: darkred; }
+        
     </style>
 </head>
 <body>
-    <h1 class="text-center mt-4 mb-2">Budget Months</h1>
+    <h1 class="text-center mt-4 header">Budget Months</h1>
     <div class="month-grid" id="monthGrid"></div>
     <div class="text-center">
-        <button class="btn btn-success add-btn" onclick="addNewMonth()">Add New Month</button>
+        <button class="btn btn-primary" onclick="addNewMonth()">Add New Month</button>
     </div>
     <script>
         function getMonthName(ym) {
